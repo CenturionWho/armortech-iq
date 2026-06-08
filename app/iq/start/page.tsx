@@ -92,6 +92,7 @@ const diagnosisRules: Record<string, Record<string, string>> = {
 export default function StartDiagnosis() {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     fullName: "",
@@ -202,6 +203,24 @@ export default function StartDiagnosis() {
     setSubmitted(true);
   }
 
+  async function handlePayment() {
+    setPaying(true);
+
+    const res = await fetch("/api/create-checkout-session", {
+      method: "POST",
+    });
+
+    const data = await res.json();
+
+    setPaying(false);
+
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert("Unable to start Stripe checkout.");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-black text-white p-8">
       <div className="max-w-3xl mx-auto">
@@ -213,7 +232,7 @@ export default function StartDiagnosis() {
 
         {submitted ? (
           <div className="bg-zinc-900 border border-orange-500 rounded p-6 space-y-5">
-            <h2 className="text-2xl font-bold">Preliminary Diagnosis</h2>
+            <h2 className="text-2xl font-bold">Diagnosis Ready</h2>
 
             <p>
               Thank you,{" "}
@@ -265,26 +284,13 @@ export default function StartDiagnosis() {
                 Edit Information
               </button>
 
-             <button
-  onClick={async () => {
-   
-
-    const res = await fetch("/api/create-checkout-session", {
-      method: "POST",
-    });
-
-    const data = await res.json();
-
-    
-
-    if (data.url) {
-      window.location.href = data.url;
-    }
-  }}
-  className="bg-zinc-800 hover:bg-zinc-700 px-6 py-3 rounded font-semibold border border-zinc-600"
->
-  Pay $45 Diagnostic Fee
-</button>
+              <button
+                onClick={handlePayment}
+                disabled={paying}
+                className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-700 px-6 py-3 rounded font-semibold border border-zinc-600"
+              >
+                {paying ? "Opening Checkout..." : "Pay $45 Diagnostic Fee"}
+              </button>
             </div>
           </div>
         ) : (
