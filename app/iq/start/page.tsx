@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
-import { supabase } from "../../../lib/supabase";
 
 ////////////////////////////////////////////////////////////////////////////////
 // DATASET DEFINITIONS
@@ -754,9 +753,12 @@ export default function StartDiagnosis() {
 
       const paymentStatus = diagnosisMode === "needsDiagnosis" ? "unpaid" : "not_required";
 
-      const { data, error } = await supabase
-        .from("diagnosis_submissions")
-        .insert({
+      const submitResponse = await fetch("/api/diagnosis-submit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           full_name: formData.fullName.trim(),
           email: formData.email.trim(),
           phone: formData.phone.trim(),
@@ -775,22 +777,23 @@ export default function StartDiagnosis() {
           pro_service_range: diagnosisMode === "needsDiagnosis" ? proServiceRange : "",
           parts_notes: `Brand: ${formData.brand}, Device: ${formData.deviceType}, Model: ${formData.modelNumber}, Serial: ${formData.serialNumber}`,
           payment_status: paymentStatus,
-        })
-        .select("id")
-        .single();
+        }),
+      });
 
-      if (error) {
-        throw new Error(error.message);
+      const submitData = await submitResponse.json();
+
+      if (!submitResponse.ok) {
+        throw new Error(submitData.error || "Submission failed.");
       }
 
-      if (!data?.id) {
+      if (!submitData.submissionId) {
         throw new Error("Submission saved, but no submission ID was returned.");
       }
 
-      setSubmissionId(data.id);
+      setSubmissionId(submitData.submissionId);
 
       if (diagnosisMode === "needsDiagnosis") {
-        await startStripeCheckout(data.id);
+        await startStripeCheckout(submitData.submissionId);
         return;
       }
 
