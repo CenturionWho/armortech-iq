@@ -1,9 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import type { ChangeEvent, FormEvent } from "react";
 
-// Category → device list
+////////////////////////////////////////////////////////////////////////////////
+// DATASET DEFINITIONS
+////////////////////////////////////////////////////////////////////////////////
+
+const DIAGNOSTIC_FEE_LABEL = "$25 diagnostic fee";
+
+type DiagnosisMode = "needsDiagnosis" | "knownProblem";
+
+type FormDataState = {
+  fullName: string;
+  email: string;
+  phone: string;
+  category: string;
+  deviceType: string;
+  brand: string;
+  modelNumber: string;
+  serialNumber: string;
+  symptom: string;
+  knownProblem: string;
+  issue: string;
+};
+
 const categories: Record<string, string[]> = {
   Appliances: [
     "Refrigerator",
@@ -29,7 +50,6 @@ const categories: Record<string, string[]> = {
     "Speakers",
   ],
   "Game Consoles": [
-    // Xbox family
     "Original Xbox",
     "Xbox 360",
     "Xbox 360 S",
@@ -39,7 +59,6 @@ const categories: Record<string, string[]> = {
     "Xbox One X",
     "Xbox Series S",
     "Xbox Series X",
-    // PlayStation family
     "PlayStation 1",
     "PlayStation 2",
     "PlayStation 2 Slim",
@@ -51,9 +70,8 @@ const categories: Record<string, string[]> = {
     "PlayStation 4 Pro",
     "PlayStation 5 Disc Edition",
     "PlayStation 5 Digital Edition",
-    "PlayStation 5 Slim Disc Edition",
-    "PlayStation 5 Slim Digital Edition",
-    // Nintendo family
+    "PlayStation 5 Slim Disc",
+    "PlayStation 5 Slim Digital",
     "Nintendo NES",
     "Super Nintendo",
     "Nintendo 64",
@@ -64,7 +82,6 @@ const categories: Record<string, string[]> = {
     "Nintendo Switch Lite",
     "Nintendo Switch OLED",
     "Nintendo Switch 2",
-    // Handheld & retro
     "Game Boy",
     "Game Boy Color",
     "Game Boy Advance",
@@ -75,7 +92,6 @@ const categories: Record<string, string[]> = {
     "Nintendo 2DS",
     "Nintendo 3DS",
     "New Nintendo 3DS",
-    // Other
     "Sega Genesis",
     "Sega Saturn",
     "Sega Dreamcast",
@@ -86,889 +102,544 @@ const categories: Record<string, string[]> = {
   ],
 };
 
-// Brand options by category
 const brandOptions: Record<string, string[]> = {
   Appliances: [
-    "Whirlpool", "Maytag", "KitchenAid", "Amana", "JennAir", "Roper",
-    "Admiral", "GE", "GE Profile", "Café", "Hotpoint", "Haier", "LG", "Samsung",
-    "Frigidaire", "Electrolux", "Kenmore", "Bosch", "Thermador", "Miele",
-    "Sub-Zero", "Wolf", "Viking", "Dacor", "Fisher & Paykel", "Speed Queen",
-    "Midea", "Hisense", "Insignia", "Magic Chef", "Danby", "Galanz", "Sharp",
-    "Toshiba", "Panasonic", "Scotsman", "Hoshizaki", "Manitowoc",
-    "Ice-O-Matic", "NewAir", "EdgeStar", "U-Line", "Rovsun", "Other / Not Listed",
+    "Whirlpool",
+    "Maytag",
+    "KitchenAid",
+    "Amana",
+    "JennAir",
+    "Roper",
+    "Admiral",
+    "GE",
+    "GE Profile",
+    "Café",
+    "Hotpoint",
+    "Haier",
+    "LG",
+    "Samsung",
+    "Frigidaire",
+    "Electrolux",
+    "Kenmore",
+    "Bosch",
+    "Thermador",
+    "Miele",
+    "Sub-Zero",
+    "Wolf",
+    "Viking",
+    "Dacor",
+    "Fisher & Paykel",
+    "Speed Queen",
+    "Midea",
+    "Hisense",
+    "Insignia",
+    "Magic Chef",
+    "Danby",
+    "Galanz",
+    "Sharp",
+    "Toshiba",
+    "Panasonic",
+    "Scotsman",
+    "Hoshizaki",
+    "Manitowoc",
+    "Ice-O-Matic",
+    "NewAir",
+    "EdgeStar",
+    "U-Line",
+    "Rovsun",
+    "Other / Not Listed",
   ],
   Electronics: [
-    "Samsung", "LG", "Sony", "TCL", "Hisense", "Vizio", "Insignia",
-    "RCA", "Sharp", "Toshiba", "Panasonic", "Dell", "HP", "Lenovo", "Apple",
-    "ASUS", "Acer", "MSI", "Onkyo", "Denon", "Yamaha", "Marantz", "Pioneer",
-    "Sony Audio", "Bose", "JBL", "Klipsch", "Other / Not Listed",
+    "Samsung",
+    "LG",
+    "Sony",
+    "TCL",
+    "Hisense",
+    "Vizio",
+    "Insignia",
+    "RCA",
+    "Sharp",
+    "Toshiba",
+    "Panasonic",
+    "Dell",
+    "HP",
+    "Lenovo",
+    "Apple",
+    "ASUS",
+    "Acer",
+    "MSI",
+    "Onkyo",
+    "Denon",
+    "Yamaha",
+    "Marantz",
+    "Pioneer",
+    "Sony Audio",
+    "Bose",
+    "JBL",
+    "Klipsch",
+    "Other / Not Listed",
   ],
   "Game Consoles": [
-    "Microsoft", "Sony", "Nintendo", "Valve", "ASUS", "Lenovo", "Sega",
-    "Atari", "Other / Not Listed",
+    "Microsoft",
+    "Sony",
+    "Nintendo",
+    "Valve",
+    "ASUS",
+    "Lenovo",
+    "Sega",
+    "Atari",
+    "Other / Not Listed",
   ],
 };
 
-// Detailed diagnosis data for each device type and symptom
-const diagnosisData: Record<
-  string,
-  {
-    symptoms: Record<
-      string,
-      {
-        description: string;
-        diyPart: string;
-        diyCostRange: string;
-        proServiceRange: string;
-      }
-    >;
-    nextStep: string;
-  }
-> = {
-  // Appliances
-  Refrigerator: {
-    symptoms: {
-      "Not cooling": {
-        description:
-          "Possible causes include improper installation location, blocked vents or dirty condenser coils, unlevel installation, or incorrect temperature settings:contentReference[oaicite:2]{index=2}.",
-        diyPart: "Condenser fan motor, start relay, temperature sensor",
-        diyCostRange: "$40 – $150",
-        proServiceRange: "$150 – $400",
-      },
-      "Leaking water": {
-        description:
-          "Could be due to a clogged drain line, cracked water line, worn door seal, or faulty inlet valve or drain pan:contentReference[oaicite:3]{index=3}.",
-        diyPart: "Drain tube kit, door gasket, water inlet valve",
-        diyCostRange: "$20 – $120",
-        proServiceRange: "$125 – $300",
-      },
-      "Noisy operation": {
-        description:
-          "Loud noises often come from worn condenser or evaporator fan motors, compressor vibration, or ice buildup causing rattling:contentReference[oaicite:4]{index=4}.",
-        diyPart: "Evaporator fan motor, condenser fan motor",
-        diyCostRange: "$40 – $150",
-        proServiceRange: "$150 – $350",
-      },
-      "Frost buildup": {
-        description:
-          "Frost can form if warm air enters through a damaged door seal or if the defrost timer, heater, or thermostat fails:contentReference[oaicite:5]{index=5}.",
-        diyPart: "Defrost heater, thermostat, defrost timer",
-        diyCostRange: "$30 – $180",
-        proServiceRange: "$150 – $400",
-      },
-      "Ice maker not working": {
-        description:
-          "May be caused by clogged or frozen water lines, a faulty water inlet valve, or a malfunctioning ice maker module.",
-        diyPart: "Water inlet valve, ice maker assembly",
-        diyCostRange: "$60 – $200",
-        proServiceRange: "$150 – $400",
-      },
-      "Power issue": {
-        description:
-          "If the refrigerator doesn’t run, check the power source, start relay, compressor, or main control board:contentReference[oaicite:6]{index=6}.",
-        diyPart: "Start relay, capacitor, main control board",
-        diyCostRange: "$50 – $250",
-        proServiceRange: "$200 – $500",
-      },
-    },
-    nextStep:
-      "Technician should verify compressor and fan operation, inspect door seals, test defrost system and control boards.",
-  },
-  Washer: {
-    symptoms: {
-      "Won’t start": {
-        description:
-          "Faulty lid switch, broken timer or control board, or a tripped breaker/unplugged machine:contentReference[oaicite:7]{index=7}.",
-        diyPart: "Lid switch, control board",
-        diyCostRange: "$25 – $200",
-        proServiceRange: "$125 – $350",
-      },
-      "Loud spin cycle": {
-        description:
-          "Unbalanced load, worn shock absorbers, or damaged suspension rods:contentReference[oaicite:8]{index=8}.",
-        diyPart: "Shock absorbers, suspension rod kit",
-        diyCostRange: "$40 – $120",
-        proServiceRange: "$150 – $400",
-      },
-      "Leaking water": {
-        description:
-          "Worn door boot seal, faulty drain pump, or cracked hoses:contentReference[oaicite:9]{index=9}.",
-        diyPart: "Door gasket, drain pump, hoses",
-        diyCostRange: "$20 – $150",
-        proServiceRange: "$125 – $300",
-      },
-      "Not draining": {
-        description:
-          "Clogged drain pump filter, blocked drain hose, or failed drain pump:contentReference[oaicite:10]{index=10}.",
-        diyPart: "Drain pump, drain hose",
-        diyCostRange: "$30 – $120",
-        proServiceRange: "$125 – $300",
-      },
-      "Grinding or squealing noise": {
-        description:
-          "Worn drive belt, damaged motor coupling, or bearing failure:contentReference[oaicite:11]{index=11}.",
-        diyPart: "Drive belt, motor coupling",
-        diyCostRange: "$25 – $80",
-        proServiceRange: "$150 – $400",
-      },
-      "Excessive vibration": {
-        description:
-          "Uneven floors or worn shock absorbers/leveling legs:contentReference[oaicite:12]{index=12}.",
-        diyPart: "Shock absorbers, leveling legs",
-        diyCostRange: "$40 – $120",
-        proServiceRange: "$150 – $350",
-      },
-      "Not spinning": {
-        description:
-          "Broken lid switch, faulty motor or belt, or clogged drain pump:contentReference[oaicite:13]{index=13}.",
-        diyPart: "Lid switch, drive belt, motor",
-        diyCostRange: "$25 – $200",
-        proServiceRange: "$150 – $400",
-      },
-      "Slow or no fill": {
-        description:
-          "Clogged inlet screens, faulty water inlet valve, or low water pressure:contentReference[oaicite:14]{index=14}.",
-        diyPart: "Water inlet valve",
-        diyCostRange: "$30 – $100",
-        proServiceRange: "$125 – $250",
-      },
-      "Door won’t unlock": {
-        description:
-          "Faulty door lock or control board error:contentReference[oaicite:15]{index=15}.",
-        diyPart: "Door lock latch, control board",
-        diyCostRange: "$30 – $200",
-        proServiceRange: "$150 – $350",
-      },
-      "Smells bad": {
-        description:
-          "Mold or detergent residue; run a cleaning cycle with vinegar and baking soda:contentReference[oaicite:16]{index=16}.",
-        diyPart: "Affresh cleaner tablets",
-        diyCostRange: "$5 – $20",
-        proServiceRange: "$50 – $100 (cleaning service)",
-      },
-    },
-    nextStep:
-      "Technician should test lid lock, inspect belts and motor, flush drain pump and hoses, check shock absorbers, and run diagnostic codes.",
-  },
-  Dryer: {
-    symptoms: {
-      "No heat": {
-        description:
-          "Burned-out heating element or blown thermal fuse; check lint buildup and gas coils:contentReference[oaicite:17]{index=17}.",
-        diyPart: "Heating element, thermal fuse, gas valve coils",
-        diyCostRange: "$15 – $80",
-        proServiceRange: "$125 – $300",
-      },
-      "Won’t start": {
-        description:
-          "Power supply issues (tripped breaker or loose plug), thermal fuse or door switch failure:contentReference[oaicite:18]{index=18}.",
-        diyPart: "Thermal fuse, door switch",
-        diyCostRange: "$10 – $40",
-        proServiceRange: "$125 – $300",
-      },
-      "Runs but clothes stay wet": {
-        description:
-          "Clogged lint screen, blocked exhaust duct, failed heating element, or weak gas coils:contentReference[oaicite:19]{index=19}.",
-        diyPart: "Lint screen, heating element, gas valve coils",
-        diyCostRange: "$10 – $80",
-        proServiceRange: "$125 – $300",
-      },
-      "Loud or strange noises": {
-        description:
-          "Failed drum seal or glide bearing; worn rollers, idler pulley, or blower wheel:contentReference[oaicite:20]{index=20}.",
-        diyPart: "Drum bearings, rollers, idler pulley",
-        diyCostRange: "$20 – $80",
-        proServiceRange: "$150 – $350",
-      },
-      "Shuts off too soon": {
-        description:
-          "Clogged exhaust vent causing overheating, faulty timer or motor relay, or door strike issues:contentReference[oaicite:21]{index=21}.",
-        diyPart: "Timer, motor relay, door strike",
-        diyCostRange: "$15 – $60",
-        proServiceRange: "$150 – $300",
-      },
-      "Overheats": {
-        description:
-          "Faulty thermostat or heating element can cause overheating:contentReference[oaicite:22]{index=22}.",
-        diyPart: "High-limit thermostat, heating element",
-        diyCostRange: "$10 – $50",
-        proServiceRange: "$150 – $300",
-      },
-      "Doesn’t tumble": {
-        description:
-          "Broken drive belt or faulty motor:contentReference[oaicite:23]{index=23}.",
-        diyPart: "Drive belt, motor",
-        diyCostRange: "$15 – $200",
-        proServiceRange: "$150 – $350",
-      },
-    },
-    nextStep:
-      "Technician should check heating element/gas coils, test thermal fuses and thermostats, clean venting system, inspect drum bearings and motor.",
-  },
-  Dishwasher: {
-    symptoms: {
-      "Not draining": {
-        description:
-          "Clogged or kinked drain hose, blocked filters, faulty drain pump or valve, garbage disposal or sink drain blockages, and clogged air gaps:contentReference[oaicite:24]{index=24}.",
-        diyPart: "Drain hose, filter kit, drain pump",
-        diyCostRange: "$15 – $120",
-        proServiceRange: "$100 – $300",
-      },
-      "Leaves dishes dirty": {
-        description:
-          "Clogged spray arms, low water temperature, wrong detergent, or insufficient water pressure. Clean filters and spray arms, use proper detergent.",
-        diyPart: "Spray arms, filter kit",
-        diyCostRange: "$15 – $60",
-        proServiceRange: "$100 – $250",
-      },
-      "Leaking water": {
-        description:
-          "Worn door seal, loose hose connections, or cracked tub; inspect seals and hoses.",
-        diyPart: "Door gasket, hose clamps",
-        diyCostRange: "$20 – $100",
-        proServiceRange: "$125 – $300",
-      },
-      "Stops mid-cycle": {
-        description:
-          "Faulty door latch, overheating, or control board problems; ensure proper latching, check for error codes.",
-        diyPart: "Door latch, control board",
-        diyCostRange: "$20 – $200",
-        proServiceRange: "$150 – $350",
-      },
-    },
-    nextStep:
-      "Technician should clear blockages, check filters and spray arms, test pump and valve, inspect door latch, and diagnose control board.",
-  },
-  "Oven/Range": {
-    symptoms: {
-      "Not heating": {
-        description:
-          "Burned-out elements, faulty igniter, defective temperature sensor, or control board problems:contentReference[oaicite:25]{index=25}.",
-        diyPart: "Bake/broil element, igniter, temperature sensor",
-        diyCostRange: "$20 – $120",
-        proServiceRange: "$150 – $400",
-      },
-      "Door won’t close": {
-        description:
-          "Damaged hinges, worn gasket, or misaligned door:contentReference[oaicite:26]{index=26}.",
-        diyPart: "Door hinges, gasket",
-        diyCostRange: "$20 – $70",
-        proServiceRange: "$150 – $250",
-      },
-      "Uneven cooking": {
-        description:
-          "Malfunctioning convection fan, faulty thermostat or sensor, damaged elements, or poor calibration:contentReference[oaicite:27]{index=27}.",
-        diyPart: "Convection fan, thermostat, bake element",
-        diyCostRange: "$25 – $120",
-        proServiceRange: "$150 – $350",
-      },
-      "Won’t turn on": {
-        description:
-          "Tripped breaker/fuse, faulty power cord, malfunctioning control board, or internal fuses:contentReference[oaicite:28]{index=28}.",
-        diyPart: "Control board, power cord",
-        diyCostRange: "$50 – $200",
-        proServiceRange: "$150 – $400",
-      },
-      "Self-cleaning not working": {
-        description:
-          "Clogged vents, broken door lock, blown thermal fuse, or faulty control board:contentReference[oaicite:29]{index=29}.",
-        diyPart: "Thermal fuse, door lock",
-        diyCostRange: "$20 – $70",
-        proServiceRange: "$150 – $350",
-      },
-      "Strange noises": {
-        description:
-          "Loose fan blades, failing fan or motor, or normal thermal expansion:contentReference[oaicite:30]{index=30}.",
-        diyPart: "Convection fan, motor",
-        diyCostRange: "$25 – $100",
-        proServiceRange: "$150 – $350",
-      },
-      "Light not working": {
-        description:
-          "Burned-out bulb, faulty socket or wiring, or control switch failure:contentReference[oaicite:31]{index=31}.",
-        diyPart: "Oven light bulb, socket",
-        diyCostRange: "$5 – $30",
-        proServiceRange: "$75 – $150",
-      },
-    },
-    nextStep:
-      "Technician should test elements and igniters, calibrate sensors, inspect hinges and gaskets, evaluate control boards and fuses.",
-  },
-  Television: {
-    symptoms: {
-      "Blank or no picture": {
-        description:
-          "Often indicates a power supply failure after a surge; capacitors or power boards may need replacement:contentReference[oaicite:32]{index=32}.",
-        diyPart: "Power supply board",
-        diyCostRange: "$60 – $150",
-        proServiceRange: "$150 – $350",
-      },
-      "Blue/green/black screen": {
-        description:
-          "Usually caused by incorrect input selection or loose cables; check HDMI and switch to correct input:contentReference[oaicite:33]{index=33}.",
-        diyPart: "High-speed HDMI cable",
-        diyCostRange: "$10 – $30",
-        proServiceRange: "$75 – $150",
-      },
-      "Image pixelates": {
-        description:
-          "Weak signal or slow internet speed can cause pixelation; improve network speeds or streaming quality:contentReference[oaicite:34]{index=34}.",
-        diyPart: "Signal amplifier or faster router",
-        diyCostRange: "$30 – $150",
-        proServiceRange: "$75 – $150",
-      },
-      "Grainy screen": {
-        description:
-          "A new TV may look grainy if sharpness is too high; lower the sharpness setting:contentReference[oaicite:35]{index=35}.",
-        diyPart: "None (settings adjustment)",
-        diyCostRange: "$0",
-        proServiceRange: "$75 – $100 (calibration)",
-      },
-      "4K content blurry": {
-        description:
-          "Wrong picture mode or HDMI version; use Movie/Cinema mode and HDMI 2.0+:contentReference[oaicite:36]{index=36}.",
-        diyPart: "HDMI 2.1 cable",
-        diyCostRange: "$10 – $30",
-        proServiceRange: "$75 – $150 (calibration)",
-      },
-      "Image out of proportion": {
-        description:
-          "Incorrect aspect ratio or overscan; adjust screen settings or use proper resolution:contentReference[oaicite:37]{index=37}.",
-        diyPart: "None (settings adjustment)",
-        diyCostRange: "$0",
-        proServiceRange: "$75 – $150 (calibration)",
-      },
-      "No sound": {
-        description:
-          "Check volume and audio settings; may need new speakers or audio board.",
-        diyPart: "Speakers or audio board",
-        diyCostRange: "$25 – $100",
-        proServiceRange: "$100 – $250",
-      },
-    },
-    nextStep:
-      "Technician should test power supply board, verify signal input and cables, test T-con and main boards, calibrate picture settings, and inspect backlights.",
-  },
-  "Desktop PC": {
-    symptoms: {
-      "Won’t start": {
-        description:
-          "A glitch or corrupt file can prevent booting:contentReference[oaicite:38]{index=38}.",
-        diyPart: "PSU tester or replacement PSU",
-        diyCostRange: "$20 – $120",
-        proServiceRange: "$75 – $200",
-      },
-      Overheating: {
-        description:
-          "Running too many apps or a clogged cooling system causes overheating:contentReference[oaicite:39]{index=39}.",
-        diyPart: "Thermal paste, CPU fan, heatsink",
-        diyCostRange: "$10 – $50",
-        proServiceRange: "$100 – $250",
-      },
-      "No network connection": {
-        description:
-          "Outdated Wi-Fi drivers can prevent connecting:contentReference[oaicite:40]{index=40}.",
-        diyPart: "Wi-Fi card or USB adapter",
-        diyCostRange: "$15 – $60",
-        proServiceRange: "$75 – $150",
-      },
-      "Slow performance": {
-        description:
-          "Virus infections, full storage, or corrupt registry slow down PCs:contentReference[oaicite:41]{index=41}.",
-        diyPart: "RAM upgrade, SSD, virus removal",
-        diyCostRange: "$30 – $150",
-        proServiceRange: "$100 – $250",
-      },
-      "Freezing screen": {
-        description:
-          "Corrupt system or program files cause freezes:contentReference[oaicite:42]{index=42}.",
-        diyPart: "RAM or storage replacement, OS reinstall",
-        diyCostRange: "$30 – $200",
-        proServiceRange: "$100 – $250",
-      },
-      "Strange noises": {
-        description:
-          "Strange noises signal hardware failures:contentReference[oaicite:43]{index=43}.",
-        diyPart: "Case fans, HDD, PSU",
-        diyCostRange: "$10 – $100",
-        proServiceRange: "$75 – $200",
-      },
-    },
-    nextStep:
-      "Technician should test PSU and motherboard, clean fans and heatsinks, update drivers, scan for malware, and check memory/storage integrity.",
-  },
-  Laptop: {
-    symptoms: {
-      "Won’t start": {
-        description:
-          "Battery or charger failure, motherboard issue, or corrupted OS.",
-        diyPart: "Laptop battery, charger, motherboard",
-        diyCostRange: "$30 – $200",
-        proServiceRange: "$100 – $300",
-      },
-      Overheating: {
-        description:
-          "Dust-clogged vents or degraded thermal paste lead to overheating.",
-        diyPart: "Thermal paste, cooling fan, laptop cooler",
-        diyCostRange: "$10 – $60",
-        proServiceRange: "$100 – $250",
-      },
-      "Keyboard not working": {
-        description:
-          "Spilled liquid or damaged keys can render the keyboard unresponsive.",
-        diyPart: "Replacement keyboard",
-        diyCostRange: "$20 – $80",
-        proServiceRange: "$75 – $150",
-      },
-      "Broken screen": {
-        description:
-          "A cracked LCD or damaged hinge results in a black or distorted display.",
-        diyPart: "Laptop screen assembly",
-        diyCostRange: "$40 – $200",
-        proServiceRange: "$150 – $350",
-      },
-      "Slow performance": {
-        description:
-          "Full storage, low RAM, or outdated HDD can cause slow performance.",
-        diyPart: "SSD upgrade, RAM upgrade",
-        diyCostRange: "$30 – $150",
-        proServiceRange: "$100 – $250",
-      },
-      "Battery not charging": {
-        description:
-          "Faulty charging port or degraded battery cells prevent charging.",
-        diyPart: "Battery, DC jack",
-        diyCostRange: "$30 – $100",
-        proServiceRange: "$75 – $200",
-      },
-    },
-    nextStep:
-      "Technician should test charger and DC jack, clean cooling system, replace battery or keyboard, and suggest RAM/SSD upgrades.",
-  },
-  Phone: {
-    symptoms: {
-      "Slow performance": {
-        description:
-          "Full RAM and many apps slow the phone; close unused apps and clear cache:contentReference[oaicite:44]{index=44}.",
-        diyPart: "None (clear apps, reset)",
-        diyCostRange: "$0",
-        proServiceRange: "$75 – $100 (optimization)",
-      },
-      "Poor battery life": {
-        description:
-          "Dim screen, turn off GPS, Wi-Fi, and Bluetooth, and check which apps drain battery:contentReference[oaicite:45]{index=45}.",
-        diyPart: "New battery",
-        diyCostRange: "$30 – $90",
-        proServiceRange: "$75 – $150",
-      },
-      Overheating: {
-        description:
-          "Battery or charger issues can cause overheating:contentReference[oaicite:46]{index=46}.",
-        diyPart: "New charger or battery",
-        diyCostRange: "$20 – $60",
-        proServiceRange: "$75 – $150",
-      },
-      "Full storage": {
-        description:
-          "Too many photos, songs, and apps fill storage:contentReference[oaicite:47]{index=47}.",
-        diyPart: "Cloud storage or SD card",
-        diyCostRange: "$10 – $50",
-        proServiceRange: "$75 – $150",
-      },
-      "App crashes/freezes": {
-        description:
-          "Buggy apps or low memory cause frequent crashes; update or reinstall.",
-        diyPart: "None (update apps)",
-        diyCostRange: "$0",
-        proServiceRange: "$50 – $100",
-      },
-      "Phone won’t charge": {
-        description:
-          "Damaged charging port, faulty cable, or worn battery prevent charging.",
-        diyPart: "Charging port or battery",
-        diyCostRange: "$15 – $60",
-        proServiceRange: "$75 – $150",
-      },
-      "Connectivity issues": {
-        description:
-          "Network outages, wrong settings, or hardware faults cause connectivity issues.",
-        diyPart: "Wi-Fi antenna, SIM tray",
-        diyCostRange: "$10 – $50",
-        proServiceRange: "$75 – $150",
-      },
-    },
-    nextStep:
-      "Technician should check battery health, inspect charging port, reset network settings, and run diagnostics for memory or storage.",
-  },
-  "Stereo Receiver": {
-    symptoms: {
-      "No sound or poor sound": {
-        description:
-          "Sound distortion or no output stems from speaker or audio output problems:contentReference[oaicite:48]{index=48}.",
-        diyPart: "Speaker wires, speaker terminals",
-        diyCostRange: "$10 – $50",
-        proServiceRange: "$75 – $200",
-      },
-      "Connectivity issues": {
-        description:
-          "Difficulty connecting devices or unstable Bluetooth/Wi-Fi may come from loose connections or interference:contentReference[oaicite:49]{index=49}.",
-        diyPart: "HDMI cables, Bluetooth module",
-        diyCostRange: "$10 – $40",
-        proServiceRange: "$75 – $150",
-      },
-      "Power issues": {
-        description:
-          "Intermittent or no power points to blown fuses, faulty power cords, or power surges:contentReference[oaicite:50]{index=50}.",
-        diyPart: "Fuse, power supply module",
-        diyCostRange: "$5 – $40",
-        proServiceRange: "$100 – $300",
-      },
-      "Control malfunction": {
-        description:
-          "Unresponsive buttons or remote control failures indicate control board problems:contentReference[oaicite:51]{index=51}.",
-        diyPart: "Control board, IR receiver",
-        diyCostRange: "$15 – $80",
-        proServiceRange: "$100 – $250",
-      },
-    },
-    nextStep:
-      "Technician should test receiver power supply, inspect fuses and wiring, verify speaker connections, update firmware, and replace faulty control boards.",
-  },
-  "Game Console": {
-    symptoms: {
-      "HDMI port issues": {
-        description:
-          "No display or flickering screen arises from loose connections, bent pins, or damaged HDMI ports:contentReference[oaicite:52]{index=52}.",
-        diyPart: "HDMI port replacement kit",
-        diyCostRange: "$10 – $40",
-        proServiceRange: "$100 – $200",
-      },
-      "Disc read errors": {
-        description:
-          "Dirty or scratched discs, faulty disc drives, or dust buildup cause read errors:contentReference[oaicite:53]{index=53}.",
-        diyPart: "Disc drive laser, replacement drive",
-        diyCostRange: "$20 – $80",
-        proServiceRange: "$100 – $250",
-      },
-      Overheating: {
-        description:
-          "Dust-clogged vents or failing fans cause shutdowns and heat:contentReference[oaicite:54]{index=54}.",
-        diyPart: "Cooling fan, thermal pads",
-        diyCostRange: "$10 – $40",
-        proServiceRange: "$100 – $200",
-      },
-      "Controller problems": {
-        description:
-          "Stick drift, unresponsive buttons, or connectivity issues result from wear or dirt:contentReference[oaicite:55]{index=55}.",
-        diyPart: "Controller joystick modules, button membranes",
-        diyCostRange: "$5 – $30",
-        proServiceRange: "$75 – $120",
-      },
-      "Software glitches": {
-        description:
-          "Outdated firmware or corrupted files cause crashes and freezes:contentReference[oaicite:56]{index=56}.",
-        diyPart: "Software update, memory reset",
-        diyCostRange: "$0 – $20",
-        proServiceRange: "$50 – $120",
-      },
-      "Power supply problems": {
-        description:
-          "Consoles that won’t turn on or randomly shut off may have faulty power cords or internal power supplies:contentReference[oaicite:57]{index=57}.",
-        diyPart: "Power supply unit",
-        diyCostRange: "$20 – $60",
-        proServiceRange: "$100 – $200",
-      },
-      "Slow performance": {
-        description:
-          "Slow loading or long boot times often stem from full storage or outdated hardware:contentReference[oaicite:58]{index=58}.",
-        diyPart: "SSD upgrade",
-        diyCostRange: "$40 – $120",
-        proServiceRange: "$100 – $200",
-      },
-      "Wi‑Fi issues": {
-        description:
-          "Connectivity problems arise from faulty Wi-Fi modules or outdated firmware:contentReference[oaicite:59]{index=59}.",
-        diyPart: "Wi-Fi module",
-        diyCostRange: "$10 – $30",
-        proServiceRange: "$100 – $200",
-      },
-    },
-    nextStep:
-      "Technician should inspect and replace HDMI ports, clean dust and verify cooling, test disc drives, update firmware, examine power supplies, and troubleshoot Wi-Fi modules.",
-  },
+const symptomOptions: Record<string, string[]> = {
+  "Refrigerator": [
+    "Not cooling",
+    "Leaking water",
+    "Ice maker not working",
+    "Noisy operation"
+  ],
+  "Washer": [
+    "Won’t start",
+    "Not draining",
+    "Shaking or banging"
+  ],
+  "Dryer": [
+    "No heat",
+    "Won’t start",
+    "Taking too long to dry"
+  ],
+  "Dishwasher": [
+    "No power",
+    "Not draining",
+    "Leaking"
+  ],
+  "Oven/Range": [
+    "Oven not heating",
+    "Burner not working"
+  ],
+  "Microwave": [
+    "Not heating",
+    "No power"
+  ],
+  "Ice Maker": [
+    "Not making ice",
+    "Leaking"
+  ],
+  "Freezer": [
+    "Not freezing",
+    "Frost buildup"
+  ],
+  "Television": [
+    "No power",
+    "Backlight but no picture",
+    "Sound but no picture",
+    "Lines on screen"
+  ],
+  "Desktop PC": [
+    "No power",
+    "Turns on but no display"
+  ],
+  "Laptop": [
+    "No power",
+    "Cracked screen",
+    "Overheating"
+  ],
+  "Tablet": [
+    "Cracked screen",
+    "Not charging"
+  ],
+  "Phone": [
+    "Not charging",
+    "Cracked screen"
+  ],
+  "Stereo Receiver": [
+    "No power",
+    "Goes into protect mode"
+  ],
+  "Amplifier": [
+    "No sound",
+    "Distorted sound"
+  ],
+  "Soundbar": [
+    "No power",
+    "No sound"
+  ],
+  "Game Console": [
+    "HDMI port issues",
+    "No power",
+    "Overheating",
+    "Disc drive issue"
+  ]
 };
+
+const emptyFormData: FormDataState = {
+  fullName: "",
+  email: "",
+  phone: "",
+  category: "",
+  deviceType: "",
+  brand: "",
+  modelNumber: "",
+  serialNumber: "",
+  symptom: "",
+  knownProblem: "",
+  issue: "",
+};
+
+function isGameConsole(deviceType: string) {
+  return categories["Game Consoles"].includes(deviceType);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// COMPONENT
+////////////////////////////////////////////////////////////////////////////////
 
 export default function StartDiagnosis() {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [paying, setPaying] = useState(false);
+  const [partRequestSent, setPartRequestSent] = useState(false);
+  const [requestingPart, setRequestingPart] = useState(false);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [lastError, setLastError] = useState("");
+  const [diagnosisMode, setDiagnosisMode] = useState<DiagnosisMode>("needsDiagnosis");
+  const [formData, setFormData] = useState<FormDataState>(emptyFormData);
 
-  // Form state includes new fields
-  const [formData, setFormData] = useState({
-    fullName: "",
-    email: "",
-    phone: "",
-    category: "",
-    deviceType: "",
-    brand: "",
-    modelNumber: "",
-    serialNumber: "",
-    symptom: "",
-    issue: "",
-  });
+  const selectedProfileKey = isGameConsole(formData.deviceType)
+    ? "Game Console"
+    : formData.deviceType;
+  const deviceTypes = formData.category ? categories[formData.category] || [] : [];
+  const symptoms = symptomOptions[selectedProfileKey] || [];
 
-  // Reset dependent fields when category changes
-  function handleCategoryChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    setFormData({
-      ...formData,
-      category: e.target.value,
+  function handleChange(e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
+    const { name, value } = e.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  }
+
+  function handleModeChange(mode: DiagnosisMode) {
+    setDiagnosisMode(mode);
+    setSubmitted(false);
+    setPartRequestSent(false);
+    setLastError("");
+    setFormData((previous) => ({
+      ...previous,
+      symptom: "",
+      knownProblem: "",
+    }));
+  }
+
+  function handleCategoryChange(e: ChangeEvent<HTMLSelectElement>) {
+    const category = e.target.value;
+
+    setFormData((previous) => ({
+      ...previous,
+      category,
       deviceType: "",
       brand: "",
       modelNumber: "",
       serialNumber: "",
       symptom: "",
-    });
+      knownProblem: "",
+    }));
   }
 
-  // Reset symptom when device type changes
-  function handleDeviceTypeChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    setFormData({
-      ...formData,
-      deviceType: e.target.value,
+  function handleDeviceTypeChange(e: ChangeEvent<HTMLSelectElement>) {
+    const deviceType = e.target.value;
+
+    setFormData((previous) => ({
+      ...previous,
+      deviceType,
       symptom: "",
-    });
+      knownProblem: "",
+    }));
   }
 
-  // Generic form change handler
-  function handleChange(
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
-  ) {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
+  async function startStripeCheckout(submissionIdToPay: string) {
+    const response = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        submissionId: submissionIdToPay,
+        customerEmail: formData.email,
+        fullName: formData.fullName,
+        deviceType: formData.deviceType,
+      }),
     });
+
+    const checkoutData = await response.json();
+
+    if (!response.ok || !checkoutData.url) {
+      throw new Error(checkoutData.error || "Unable to start Stripe checkout.");
+    }
+
+    window.location.href = checkoutData.url;
   }
 
-  // Determine selected diagnosis profile (consoles share same profile)
-  const consoleModels = categories["Game Consoles"];
-  const selectedProfile = consoleModels.includes(formData.deviceType)
-    ? diagnosisData["Game Console"]
-    : diagnosisData[formData.deviceType];
-
-  // Get lists based on selections
-  const deviceTypes = formData.category ? categories[formData.category] || [] : [];
-  const symptoms = selectedProfile ? Object.keys(selectedProfile.symptoms) : [];
-
-  // Calculate diagnostic output values
-  const symptomDetail = selectedProfile?.symptoms[formData.symptom];
-  const diagnosis = symptomDetail?.description || "";
-  const diyPart = symptomDetail?.diyPart || "";
-  const diyCostRange = symptomDetail?.diyCostRange || "";
-  const proServiceRange = symptomDetail?.proServiceRange || "";
-  const nextStep = selectedProfile?.nextStep || "Technician evaluation required.";
-  const estimatedRange = diyCostRange; // reusing cost range for display
-
-  // Submit form: save to Supabase
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSaving(true);
+    setLastError("");
+    setPartRequestSent(false);
 
-    const { error } = await supabase.from("diagnosis_submissions").insert({
-      full_name: formData.fullName,
-      email: formData.email,
-      phone: formData.phone,
-      category: formData.category,
-      device_type: formData.deviceType,
-      brand: formData.brand,
-      model_number: formData.modelNumber,
-      serial_number: formData.serialNumber,
-      symptom: formData.symptom,
-      issue_description: formData.issue,
-      diagnosis_result: diagnosis,
-      estimated_range: estimatedRange,
-      recommended_next_step: nextStep,
-      diy_part: diyPart,
-      diy_cost_range: diyCostRange,
-      pro_service_range: proServiceRange,
-      parts_notes:
-        `Brand: ${formData.brand}, Device: ${formData.deviceType}, Model: ${formData.modelNumber}, Serial: ${formData.serialNumber}`,
-      payment_status: "unpaid",
-    });
+    try {
+      const finalSymptom =
+        diagnosisMode === "knownProblem" ? formData.knownProblem : formData.symptom;
 
-    setSaving(false);
+      const paymentStatus = diagnosisMode === "needsDiagnosis" ? "unpaid" : "not_required";
 
-    if (error) {
-      alert("Submission failed: " + error.message);
+      const submitResponse = await fetch("/api/diagnosis-submit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          full_name: formData.fullName.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          category: formData.category,
+          device_type: formData.deviceType,
+          brand: formData.brand,
+          model_number: formData.modelNumber.trim(),
+          serial_number: formData.serialNumber.trim(),
+          symptom: finalSymptom,
+          issue_description: formData.issue.trim(),
+          diagnosis_mode: diagnosisMode,
+          parts_notes: `Brand: ${formData.brand}, Device: ${formData.deviceType}, Model: ${formData.modelNumber}, Serial: ${formData.serialNumber}`,
+          payment_status: paymentStatus,
+        }),
+      });
+
+      const submitData = await submitResponse.json();
+
+      if (!submitResponse.ok) {
+        throw new Error(submitData.error || "Submission failed.");
+      }
+
+      if (!submitData.submissionId) {
+        throw new Error("Submission saved, but no submission ID was returned.");
+      }
+
+      setSubmissionId(submitData.submissionId);
+
+      if (diagnosisMode === "needsDiagnosis") {
+        await startStripeCheckout(submitData.submissionId);
+        return;
+      }
+
+      setSubmitted(true);
+    } catch (error) {
+      console.error("Diagnostic submission failed:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again or contact ArmorTech.";
+      setLastError(message);
+      alert(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePartRequest() {
+    if (!submissionId) {
+      alert("Missing submission ID. Please submit the request again.");
       return;
     }
 
-    setSubmitted(true);
-  }
+    setRequestingPart(true);
+    setLastError("");
 
-  // Handle Stripe checkout
-  async function handlePayment() {
-    setPaying(true);
-    const res = await fetch("/api/create-checkout-session", {
-      method: "POST",
-    });
-    const data = await res.json();
-    setPaying(false);
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert("Unable to start Stripe checkout.");
+    try {
+      const response = await fetch("/api/part-request", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          diagnosisSubmissionId: submissionId,
+          fullName: formData.fullName,
+          email: formData.email,
+          phone: formData.phone,
+          category: formData.category,
+          deviceType: formData.deviceType,
+          brand: formData.brand,
+          modelNumber: formData.modelNumber,
+          serialNumber: formData.serialNumber,
+          symptom:
+            diagnosisMode === "needsDiagnosis"
+              ? formData.symptom
+              : formData.knownProblem,
+          recommendedPart: "Technician verification requested",
+          estimatedDiyCost: "Manual quote required",
+          proServiceRange: "Manual quote required",
+          customerNotes: formData.issue,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Part quote request failed.");
+      }
+
+      setPartRequestSent(true);
+    } catch (error) {
+      console.error("Part quote request failed:", error);
+      const message =
+        error instanceof Error ? error.message : "Part quote request failed.";
+      setLastError(message);
+      alert(message);
+    } finally {
+      setRequestingPart(false);
     }
   }
 
-  return (
-    <main className="min-h-screen bg-black text-white p-8">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-4xl font-bold mb-2">ArmorTech IQ</h1>
-        <p className="text-gray-400 mb-8">
-          Intelligent diagnostic intake for appliances, electronics, and game consoles.
-        </p>
+  function resetForm() {
+    setSubmitted(false);
+    setSaving(false);
+    setPartRequestSent(false);
+    setRequestingPart(false);
+    setSubmissionId(null);
+    setLastError("");
+    setDiagnosisMode("needsDiagnosis");
+    setFormData(emptyFormData);
+  }
 
-        {submitted ? (
-          // Display diagnosis summary
-          <div className="bg-zinc-900 border border-orange-500 rounded p-6 space-y-5">
-            <h2 className="text-2xl font-bold">Diagnosis Ready</h2>
-            <p>
-              Thank you,{" "}
-              <span className="font-semibold">{formData.fullName}</span>.
-            </p>
-            <div>
-              <p className="text-gray-400 text-sm">Category</p>
-              <p className="font-semibold">{formData.category}</p>
-            </div>
-            <div>
-              <p className="text-gray-400 text-sm">Device Type</p>
-              <p className="font-semibold">{formData.deviceType}</p>
-            </div>
-            <div>
-              <p className="text-gray-400 text-sm">Brand</p>
-              <p>{formData.brand}</p>
-            </div>
-            <div>
-              <p className="text-gray-400 text-sm">Model</p>
-              <p>{formData.modelNumber}</p>
-            </div>
-            <div>
-              <p className="text-gray-400 text-sm">Symptom</p>
-              <p>{formData.symptom}</p>
-            </div>
-            <div>
-              <p className="text-gray-400 text-sm">Description</p>
-              <p>{diagnosis}</p>
-            </div>
-            <div className="bg-black border border-zinc-700 rounded p-4">
-              <p className="text-gray-400 text-sm mb-1">DIY Part Suggestion</p>
-              <p>{diyPart}</p>
-            </div>
-            <div className="bg-black border border-zinc-700 rounded p-4">
-              <p className="text-gray-400 text-sm mb-1">DIY Cost Range</p>
-              <p>{diyCostRange}</p>
-            </div>
-            <div className="bg-black border border-zinc-700 rounded p-4">
-              <p className="text-gray-400 text-sm mb-1">Pro Service Range</p>
-              <p>{proServiceRange}</p>
-            </div>
-            <div className="bg-black border border-zinc-700 rounded p-4">
-              <p className="text-gray-400 text-sm mb-1">Recommended Next Step</p>
-              <p>{nextStep}</p>
-            </div>
-            <p className="text-sm text-gray-400">
-              Note: This preliminary diagnosis is provided as a guideline. Prices vary by region and availability.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setSubmitted(false)}
-                className="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded font-semibold"
-              >
-                Edit Information
-              </button>
-              <button
-                onClick={handlePayment}
-                disabled={paying}
-                className="bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-700 px-6 py-3 rounded font-semibold border border-zinc-600"
-              >
-                {paying ? "Opening Checkout..." : "Pay $45 Diagnostic Fee"}
-              </button>
-            </div>
+  return (
+    <main className="min-h-screen bg-black p-6 text-white md:p-8">
+      <div className="mx-auto max-w-3xl">
+        <section className="mb-8 rounded-xl border border-orange-500 bg-zinc-950 p-6">
+          <p className="text-sm uppercase tracking-wide text-orange-500">
+            ArmorTech IQ
+          </p>
+          <h1 className="mt-2 text-4xl font-bold">Start Diagnostic</h1>
+          <p className="mt-3 text-zinc-300">
+            Submit your device information first. Paid diagnostic requests are saved, then sent to Stripe, then unlocked on the results page after payment.
+          </p>
+        </section>
+
+        {lastError ? (
+          <div className="mb-6 rounded-lg border border-red-500 bg-red-950/40 p-4 text-red-200">
+            {lastError}
           </div>
-        ) : (
-          // Diagnostic intake form
+        ) : null}
+
+        {!submitted ? (
           <form onSubmit={handleSubmit} className="space-y-4">
-            <input
-              name="fullName"
-              type="text"
-              placeholder="Full Name"
-              value={formData.fullName}
-              onChange={handleChange}
-              className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
-              required
-            />
-            <input
-              name="email"
-              type="email"
-              placeholder="Email Address"
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
-              required
-            />
+            <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-4 space-y-4">
+              <p className="font-semibold text-orange-500">Choose your request type</p>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-800 bg-black p-4">
+                <input
+                  type="radio"
+                  name="diagnosisMode"
+                  value="needsDiagnosis"
+                  checked={diagnosisMode === "needsDiagnosis"}
+                  onChange={() => handleModeChange("needsDiagnosis")}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-semibold">Needs Diagnosis</span>
+                  <span className="block text-sm text-zinc-400">
+                    Enter the device details, continue to payment, then receive likely cause, cost ranges, part direction, and next step.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-800 bg-black p-4">
+                <input
+                  type="radio"
+                  name="diagnosisMode"
+                  value="knownProblem"
+                  checked={diagnosisMode === "knownProblem"}
+                  onChange={() => handleModeChange("knownProblem")}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-semibold">I Know the Problem</span>
+                  <span className="block text-sm text-zinc-400">
+                    Use this for part quote requests, manual review, or known failures. This path does not unlock an automated diagnostic result.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <input
+                name="fullName"
+                type="text"
+                placeholder="Full Name"
+                value={formData.fullName}
+                onChange={handleChange}
+                className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
+                required
+              />
+
+              <input
+                name="email"
+                type="email"
+                placeholder="Email Address"
+                value={formData.email}
+                onChange={handleChange}
+                className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
+                required
+              />
+            </div>
+
             <input
               name="phone"
               type="tel"
               placeholder="Phone Number"
               value={formData.phone}
               onChange={handleChange}
-              className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+              className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
               required
             />
 
-            {/* Category */}
             <select
               name="category"
               value={formData.category}
               onChange={handleCategoryChange}
-              className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+              className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
               required
             >
               <option value="">Select Category</option>
-              {Object.keys(categories).map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
+              {Object.keys(categories).map((category) => (
+                <option key={category} value={category}>
+                  {category}
                 </option>
               ))}
             </select>
 
-            {/* Device Type */}
-            {formData.category && (
+            {formData.category ? (
               <select
                 name="deviceType"
                 value={formData.deviceType}
                 onChange={handleDeviceTypeChange}
-                className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+                className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
                 required
               >
                 <option value="">Select Device Type</option>
-                {deviceTypes.map((device) => (
-                  <option key={device} value={device}>
-                    {device}
+                {deviceTypes.map((deviceType) => (
+                  <option key={deviceType} value={deviceType}>
+                    {deviceType}
                   </option>
                 ))}
               </select>
-            )}
+            ) : null}
 
-            {/* Brand */}
-            {formData.category && (
+            {formData.category ? (
               <select
                 name="brand"
                 value={formData.brand}
                 onChange={handleChange}
-                className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+                className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
                 required
               >
                 <option value="">Select Brand</option>
@@ -978,69 +649,202 @@ export default function StartDiagnosis() {
                   </option>
                 ))}
               </select>
-            )}
+            ) : null}
 
-            {/* Model & Serial */}
-            {formData.deviceType && (
-              <>
+            {formData.deviceType ? (
+              <div className="grid gap-4 md:grid-cols-2">
                 <input
                   name="modelNumber"
                   type="text"
-                  placeholder="Model Number (required for parts)"
+                  placeholder="Model Number"
                   value={formData.modelNumber}
                   onChange={handleChange}
-                  className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+                  className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
                   required
                 />
+
                 <input
                   name="serialNumber"
                   type="text"
                   placeholder="Serial Number (optional)"
                   value={formData.serialNumber}
                   onChange={handleChange}
-                  className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+                  className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
                 />
-              </>
-            )}
+              </div>
+            ) : null}
 
-            {/* Symptom */}
-            {formData.deviceType && (
-              <select
-                name="symptom"
-                value={formData.symptom}
+            {diagnosisMode === "needsDiagnosis" ? (
+              formData.deviceType ? (
+                symptoms.length > 0 ? (
+                  <select
+                    name="symptom"
+                    value={formData.symptom}
+                    onChange={handleChange}
+                    className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
+                    required
+                  >
+                    <option value="">Select Main Symptom</option>
+                    {symptoms.map((symptom) => (
+                      <option key={symptom} value={symptom}>
+                        {symptom}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    name="symptom"
+                    type="text"
+                    placeholder="Describe the main symptom"
+                    value={formData.symptom}
+                    onChange={handleChange}
+                    className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
+                    required
+                  />
+                )
+              ) : null
+            ) : (
+              <input
+                name="knownProblem"
+                type="text"
+                placeholder="Describe the known problem or requested part"
+                value={formData.knownProblem}
                 onChange={handleChange}
-                className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+                className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
                 required
-              >
-                <option value="">Select Main Symptom</option>
-                {symptoms.map((symptom) => (
-                  <option key={symptom} value={symptom}>
-                    {symptom}
-                  </option>
-                ))}
-              </select>
+              />
             )}
 
-            {/* Issue Description */}
             <textarea
               name="issue"
-              rows={6}
+              rows={5}
               placeholder="Describe the issue in your own words..."
               value={formData.issue}
               onChange={handleChange}
-              className="w-full p-3 rounded bg-zinc-900 border border-zinc-700"
+              className="w-full rounded bg-zinc-900 p-3 text-white border border-zinc-700"
               required
             />
 
-            {/* Submit Button */}
+            {diagnosisMode === "needsDiagnosis" ? (
+              <div className="rounded-xl border border-orange-500 bg-zinc-950 p-4 text-sm text-zinc-300">
+                <p className="mb-1 font-semibold text-orange-500">
+                  Diagnostic flow
+                </p>
+                <p>
+                  Your request is saved first. Then you pay the {DIAGNOSTIC_FEE_LABEL}. After payment, ArmorTech IQ redirects you to your results page.
+                </p>
+              </div>
+            ) : null}
+
             <button
               type="submit"
               disabled={saving}
-              className="bg-orange-500 hover:bg-orange-600 disabled:bg-zinc-700 px-6 py-3 rounded font-semibold"
+              className="rounded bg-orange-500 px-6 py-3 font-semibold text-black hover:bg-orange-600 disabled:bg-zinc-700 disabled:text-zinc-300"
             >
-              {saving ? "Saving..." : "Continue"}
+              {saving
+                ? diagnosisMode === "needsDiagnosis"
+                  ? "Saving and opening payment..."
+                  : "Submitting..."
+                : diagnosisMode === "needsDiagnosis"
+                  ? "Continue to Payment — $25"
+                  : "Submit Request"}
             </button>
           </form>
+        ) : (
+          <div className="space-y-5 rounded-xl border border-orange-500 bg-zinc-950 p-6">
+            <h2 className="text-2xl font-bold text-orange-500">
+              Request Submitted
+            </h2>
+
+            <p>
+              Thank you, <span className="font-semibold">{formData.fullName}</span>. ArmorTech received your request.
+            </p>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <p className="text-sm text-zinc-400">Mode</p>
+                <p>{diagnosisMode === "needsDiagnosis" ? "Needs Diagnosis" : "Known Problem"}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-zinc-400">Category</p>
+                <p>{formData.category}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-zinc-400">Device Type</p>
+                <p>{formData.deviceType}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-zinc-400">Brand</p>
+                <p>{formData.brand}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-zinc-400">Model</p>
+                <p>{formData.modelNumber}</p>
+              </div>
+
+              <div>
+                <p className="text-sm text-zinc-400">Serial</p>
+                <p>{formData.serialNumber || "Not provided"}</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm text-zinc-400">
+                {diagnosisMode === "needsDiagnosis" ? "Symptom" : "Known Problem"}
+              </p>
+              <p>
+                {diagnosisMode === "needsDiagnosis"
+                  ? formData.symptom
+                  : formData.knownProblem}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm text-zinc-400">Your Description</p>
+              <p>{formData.issue}</p>
+            </div>
+
+            {diagnosisMode === "knownProblem" ? (
+              <div className="space-y-3 rounded-xl border border-orange-500 bg-black p-4">
+                <h3 className="text-xl font-bold text-orange-500">
+                  Request Compatible Part Quote
+                </h3>
+
+                <p className="text-zinc-300">
+                  ArmorTech will verify the correct replacement part using your brand, model number, and serial number before quoting or ordering.
+                </p>
+
+                {partRequestSent ? (
+                  <p className="font-semibold text-green-400">
+                    Part quote request sent. ArmorTech will verify compatibility and contact you.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handlePartRequest}
+                    disabled={requestingPart}
+                    className="rounded bg-orange-500 px-6 py-3 font-semibold text-black hover:bg-orange-600 disabled:bg-zinc-700 disabled:text-zinc-300"
+                  >
+                    {requestingPart ? "Sending Request..." : "Request Compatible Part Quote"}
+                  </button>
+                )}
+              </div>
+            ) : null}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded bg-orange-500 px-6 py-3 font-semibold text-black hover:bg-orange-600"
+              >
+                Start Over
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </main>
