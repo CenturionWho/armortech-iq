@@ -1,28 +1,13 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function createSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-  }
-
-  if (!serviceRoleKey) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-}
+const noStoreHeaders = {
+  "Cache-Control": "private, no-store, max-age=0",
+};
 
 export async function GET(request: Request) {
   try {
@@ -30,13 +15,10 @@ export async function GET(request: Request) {
 
     if (!stripeSecretKey) {
       return NextResponse.json(
-        { error: "Missing STRIPE_SECRET_KEY" },
-        { status: 500 }
+        { error: "Payment processing is not configured." },
+        { status: 500, headers: noStoreHeaders }
       );
     }
-
-    const stripe = new Stripe(stripeSecretKey);
-    const supabase = createSupabaseAdmin();
 
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get("session_id");
@@ -44,35 +26,48 @@ export async function GET(request: Request) {
     if (!sessionId) {
       return NextResponse.json(
         { error: "Missing session_id" },
-        { status: 400 }
+        { status: 400, headers: noStoreHeaders }
       );
     }
 
+    const stripe = new Stripe(stripeSecretKey);
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    const submissionId = session.metadata?.submission_id;
+    if (
+      session.mode !== "payment" ||
+      session.metadata?.source !== "armortech-iq"
+    ) {
+      return NextResponse.json(
+        { error: "Invalid ArmorTech IQ payment session." },
+        { status: 400, headers: noStoreHeaders }
+      );
+    }
+
+    const submissionId = session.metadata.submission_id;
 
     if (!submissionId) {
       return NextResponse.json(
         { error: "Missing diagnostic submission metadata." },
-        { status: 400 }
+        { status: 400, headers: noStoreHeaders }
       );
     }
 
-    const paid = session.payment_status === "paid";
+    if (session.payment_status !== "paid") {
+      return NextResponse.json(
+        { paid: false },
+        { headers: noStoreHeaders }
+      );
+    }
 
-    if (paid) {
-      const { error: updateError } = await supabase
-        .from("diagnosis_submissions")
-        .update({
-          payment_status: "paid",
-          stripe_checkout_session_id: sessionId,
-        })
-        .eq("id", submissionId);
+    const supabase = createSupabaseAdmin();
 
-      if (updateError) {
-        console.error("Payment status update failed:", updateError);
-      }
+    const { error: updateError } = await supabase
+      .from("diagnosis_submissions")
+      .update({ payment_status: "paid" })
+      .eq("id", submissionId);
+
+    if (updateError) {
+      console.error("Payment status update failed:", updateError);
     }
 
     const { data: submission, error: fetchError } = await supabase
@@ -107,28 +102,23 @@ export async function GET(request: Request) {
 
       return NextResponse.json(
         { error: "Diagnostic submission not found." },
-        { status: 404 }
+        { status: 404, headers: noStoreHeaders }
       );
     }
 
-    const paymentConfirmed =
-      paid || submission.payment_status === "paid";
-
-    return NextResponse.json({
-      paid: paymentConfirmed,
-      ...submission,
-    });
+    return NextResponse.json(
+      {
+        paid: true,
+        ...submission,
+      },
+      { headers: noStoreHeaders }
+    );
   } catch (error) {
     console.error("IQ results route failed:", error);
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load diagnostic results.",
-      },
-      { status: 500 }
+      { error: "Unable to load diagnostic results." },
+      { status: 500, headers: noStoreHeaders }
     );
   }
 }

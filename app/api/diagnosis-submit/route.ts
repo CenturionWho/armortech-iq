@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
+import {
+  buildDiagnosticResult,
+  type DiagnosticFields,
+} from "@/lib/diagnosisEngine";
 
 export const runtime = "nodejs";
+
+type DiagnosisMode = "needsDiagnosis" | "knownProblem";
 
 type DiagnosisSubmitPayload = {
   full_name?: string;
@@ -14,39 +20,21 @@ type DiagnosisSubmitPayload = {
   serial_number?: string;
   symptom?: string;
   issue_description?: string;
-  diagnosis_result?: string;
-  estimated_range?: string;
-  recommended_next_step?: string;
-  diy_part?: string;
-  diy_cost_range?: string;
-  pro_service_range?: string;
-  parts_notes?: string;
-  payment_status?: string;
+  diagnosis_mode?: DiagnosisMode;
 };
 
 function clean(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function createSupabaseAdmin() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL");
-  }
-
-  if (!serviceRoleKey) {
-    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-  }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-}
+const emptyDiagnostic: DiagnosticFields = {
+  diagnosis_result: "",
+  estimated_range: "",
+  recommended_next_step: "",
+  diy_part: "",
+  diy_cost_range: "",
+  pro_service_range: "",
+};
 
 export async function POST(request: Request) {
   try {
@@ -62,6 +50,7 @@ export async function POST(request: Request) {
     if (!clean(body.brand)) requiredFields.push("brand");
     if (!clean(body.model_number)) requiredFields.push("model_number");
     if (!clean(body.symptom)) requiredFields.push("symptom");
+    if (!clean(body.issue_description)) requiredFields.push("issue_description");
 
     if (requiredFields.length > 0) {
       return NextResponse.json(
@@ -69,6 +58,24 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    const diagnosisMode: DiagnosisMode =
+      body.diagnosis_mode === "knownProblem"
+        ? "knownProblem"
+        : "needsDiagnosis";
+
+    const category = clean(body.category);
+    const deviceType = clean(body.device_type);
+    const symptom = clean(body.symptom);
+
+    const diagnostic =
+      diagnosisMode === "needsDiagnosis"
+        ? buildDiagnosticResult({
+            category,
+            deviceType,
+            symptom,
+          })
+        : emptyDiagnostic;
 
     const supabase = createSupabaseAdmin();
 
@@ -78,21 +85,19 @@ export async function POST(request: Request) {
         full_name: clean(body.full_name),
         email: clean(body.email),
         phone: clean(body.phone),
-        category: clean(body.category),
-        device_type: clean(body.device_type),
+        category,
+        device_type: deviceType,
         brand: clean(body.brand),
         model_number: clean(body.model_number),
         serial_number: clean(body.serial_number),
-        symptom: clean(body.symptom),
+        symptom,
         issue_description: clean(body.issue_description),
-        diagnosis_result: clean(body.diagnosis_result),
-        estimated_range: clean(body.estimated_range),
-        recommended_next_step: clean(body.recommended_next_step),
-        diy_part: clean(body.diy_part),
-        diy_cost_range: clean(body.diy_cost_range),
-        pro_service_range: clean(body.pro_service_range),
-        parts_notes: clean(body.parts_notes),
-        payment_status: clean(body.payment_status) || "unpaid",
+        ...diagnostic,
+        parts_notes: `Brand: ${clean(body.brand)}, Device: ${deviceType}, Model: ${clean(
+          body.model_number
+        )}, Serial: ${clean(body.serial_number)}`,
+        payment_status:
+          diagnosisMode === "needsDiagnosis" ? "unpaid" : "not_required",
       })
       .select("id")
       .single();
@@ -101,7 +106,7 @@ export async function POST(request: Request) {
       console.error("Diagnosis submit insert failed:", error);
 
       return NextResponse.json(
-        { error: error.message },
+        { error: "Unable to save the diagnostic request." },
         { status: 500 }
       );
     }
@@ -114,12 +119,7 @@ export async function POST(request: Request) {
     console.error("Diagnosis submit route failed:", error);
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Diagnosis submission failed.",
-      },
+      { error: "Diagnosis submission failed." },
       { status: 500 }
     );
   }

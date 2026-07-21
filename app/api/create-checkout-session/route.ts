@@ -1,13 +1,13 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
+import { createSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
+const DIAGNOSTIC_FEE_CENTS = 2500;
+
 type CheckoutRequest = {
   submissionId?: string;
-  customerEmail?: string;
-  fullName?: string;
-  deviceType?: string;
 };
 
 function getBaseUrl(request: Request) {
@@ -35,34 +35,16 @@ function getBaseUrl(request: Request) {
   return "https://iq.armortechrepair.com";
 }
 
-function getDiagnosticFeeCents() {
-  const configuredAmount = process.env.DIAGNOSTIC_FEE_CENTS;
-
-  if (!configuredAmount) {
-    return 4500;
-  }
-
-  const parsedAmount = Number(configuredAmount);
-
-  if (!Number.isFinite(parsedAmount) || parsedAmount < 100) {
-    return 4500;
-  }
-
-  return Math.round(parsedAmount);
-}
-
 export async function POST(request: Request) {
   try {
     const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 
     if (!stripeSecretKey) {
       return NextResponse.json(
-        { error: "Missing STRIPE_SECRET_KEY" },
+        { error: "Payment processing is not configured." },
         { status: 500 }
       );
     }
-
-    const stripe = new Stripe(stripeSecretKey);
 
     const body = (await request.json()) as CheckoutRequest;
 
@@ -73,13 +55,41 @@ export async function POST(request: Request) {
       );
     }
 
+    const supabase = createSupabaseAdmin();
+    const { data: submission, error: submissionError } = await supabase
+      .from("diagnosis_submissions")
+      .select("id, email, full_name, device_type, payment_status")
+      .eq("id", body.submissionId)
+      .single();
+
+    if (submissionError || !submission) {
+      return NextResponse.json(
+        { error: "Diagnostic submission not found." },
+        { status: 404 }
+      );
+    }
+
+    if (submission.payment_status === "paid") {
+      return NextResponse.json(
+        { error: "This diagnostic has already been paid." },
+        { status: 409 }
+      );
+    }
+
+    if (submission.payment_status !== "unpaid") {
+      return NextResponse.json(
+        { error: "This request does not require diagnostic payment." },
+        { status: 400 }
+      );
+    }
+
+    const stripe = new Stripe(stripeSecretKey);
     const baseUrl = getBaseUrl(request);
-    const diagnosticFeeCents = getDiagnosticFeeCents();
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
-      customer_email: body.customerEmail || undefined,
+      customer_email: submission.email || undefined,
       phone_number_collection: {
         enabled: true,
       },
@@ -92,21 +102,21 @@ export async function POST(request: Request) {
               description:
                 "Unlocks diagnostic details, DIY part suggestions, cost ranges, and recommended next steps.",
             },
-            unit_amount: diagnosticFeeCents,
+            unit_amount: DIAGNOSTIC_FEE_CENTS,
           },
           quantity: 1,
         },
       ],
       success_url: `${baseUrl}/iq/results?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/iq/start?payment=cancelled&submission_id=${encodeURIComponent(
-        body.submissionId
+        submission.id
       )}`,
       metadata: {
         source: "armortech-iq",
-        submission_id: body.submissionId,
-        customer_email: body.customerEmail || "",
-        full_name: body.fullName || "",
-        device_type: body.deviceType || "",
+        submission_id: submission.id,
+        customer_email: submission.email || "",
+        full_name: submission.full_name || "",
+        device_type: submission.device_type || "",
       },
     });
 
@@ -122,7 +132,7 @@ export async function POST(request: Request) {
     console.error("Stripe checkout session creation failed:", error);
 
     return NextResponse.json(
-      { error: "Stripe session creation failed" },
+      { error: "Stripe session creation failed." },
       { status: 500 }
     );
   }

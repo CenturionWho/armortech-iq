@@ -43,7 +43,8 @@ function ResultsContent() {
 
       try {
         const response = await fetch(
-          `/api/iq/results?session_id=${encodeURIComponent(sessionId)}`
+          `/api/iq/results?session_id=${encodeURIComponent(sessionId)}`,
+          { cache: "no-store" }
         );
 
         const data = await response.json();
@@ -133,12 +134,12 @@ function ResultsContent() {
       <main className="min-h-screen bg-black text-white p-6">
         <div className="mx-auto max-w-3xl rounded-xl border border-orange-500 bg-zinc-950 p-6">
           <h1 className="text-3xl font-bold text-orange-500">
-            Payment Received
+            Results Unavailable
           </h1>
 
           <p className="mt-4 text-zinc-200">
             {error ||
-              "Your payment was received, but your results could not be displayed automatically."}
+              "Your results could not be displayed automatically."}
           </p>
 
           <p className="mt-4 text-zinc-400">
