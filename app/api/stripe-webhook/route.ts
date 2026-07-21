@@ -56,11 +56,17 @@ export async function POST(request: Request) {
     );
   }
 
-  if (event.type === "checkout.session.completed") {
+  if (
+    event.type === "checkout.session.completed" ||
+    event.type === "checkout.session.async_payment_succeeded"
+  ) {
     const session = event.data.object as Stripe.Checkout.Session;
     const submissionId = session.metadata?.submission_id;
+    const isPaidArmorTechSession =
+      session.metadata?.source === "armortech-iq" &&
+      session.payment_status === "paid";
 
-    if (submissionId) {
+    if (submissionId && isPaidArmorTechSession) {
       const { error } = await supabase
         .from("diagnosis_submissions")
         .update({
